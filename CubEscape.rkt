@@ -1,0 +1,458 @@
+#lang racket
+(require pict3d)            ; The 3D library
+(require pict3d/universe)   ; The BigBang 3D library
+(require graphics/graphics) ; The Graphics/GUI library
+(require rsound)            ; The audio library
+
+(open-graphics)
+
+; ********************************************* CubEscape3d *****************************************************
+; CubEscape3d is a 3d game made for school purpose by Eljon Harlicaj and Lorenzo Vergnaghi, students at
+; Universita della Svizzera Italiana.
+; The purpose of the game is to avoid collision between your sphere and the evil cubes on the 3d open world.
+; 3d World is a news on Racket programming. We wanted to exploit for two reasons, first of all gaming is our
+; passion. Second we wanted to make easier the life of incoming students. With this code as exemple they will
+; not need two weeks to understand how to move an object in a 3d world and how to trace collision between them.
+;
+;
+; All rights (if there is any) are reserved.
+; ***************************************************************************************************************
+
+
+
+; ------------------------------------------>     READ ME     <-------------------------------------------
+; ********************************************************************************************************
+; ***    If you think that you are so brave and that you have any chance in changing this code and     ***
+; ***    make it better do it. I just want to say you that the collision detection did not make me     ***
+; ***     sleep for a a pair of weeks. But you know what? it works!                                    ***
+; ********************************************************************************************************
+; --------------------------------------------------------------------------------------------------------
+;_________________________________________________________________________
+
+;The definitions of the different audio file needed
+(define SoundtrackMain (rs-read "SoundtrackMain.wav"))
+(define SoundtrackMenu1 (rs-read "SoundtrackMenu1.wav"))
+(define SoundtrackEnd (rs-read "SoundtrackEnd.wav"))
+
+;_________________________________________________________________________
+
+;The speed modifier for the moving sphere
+;Interpreation: Smaller the number, faster the moovement
+(define MODSPEED 30) 
+
+;The number of obstacles in the game
+(define OSTNUM 1000)
+
+;The length of the edge of the obstacles
+(define Cubedimension 1)
+
+;The width of the tunnel
+(define DimxOBS 20)
+
+;The depth of the tunnel
+(define DimyOBS 1000)
+
+;The heigth of the tunnel
+(define DimzOBS 20)
+
+;The transparency of the moving sphere
+(define sphere-transparency 0.87) 
+
+;The relation between time and speed
+(define (VEL t) (/ t MODSPEED))
+
+;_________________________________________________________________________
+
+; A obs is a (make-obs x y z)
+; where "x y z" are 3d coordinates (posn).
+; Interpretation: make a obstacle on the given coordinates
+(define-struct obs [x y z])
+
+
+; The initial x y z position of the sphere
+; Interpretation: the initial position of our main object on the world state
+(define init-stat
+  (pos DimxOBS -50 DimzOBS
+       ))
+
+; number -> list <numbers>
+; Interpretation: takes a number N as an input and returns a list of N-1 numbers from 1 to N
+(define (list-of-N_to_M-elements n )
+  (rest (build-list n values)))
+
+; list<numbers> -> list<struct> (lsit obs)
+; Interpreation: takes a list of N numbers as an input and returns a list of N structs <obs>
+; Each struct is a set of 3 numbers generated randomly
+(define (build-list-of-structs list)
+  (cond [(empty? list) '()]
+        [(cons? list)
+         (cons
+          (make-obs
+           (* 2 (random 1 DimxOBS))
+           (* 2 (random 1 DimyOBS))
+           (* 2 (random 1 DimzOBS)))
+          (build-list-of-structs (rest list)))]))
+
+;number -> list<struct>
+;Interpreation: This function is simply the combination of the two previous function : "list-of-N_to_M-elements" "build-list-of-structs" (combine two given function to build a list of structs)
+(define (crea-lista-di-ostacoli n )
+  (build-list-of-structs
+   (list-of-N_to_M-elements n )))
+
+;list<struct> -> pict3d              ------> ( a pict3d is a three-dimensional [as defined on the library manual])
+;Interpreation: takes a struct <obs> as an input and returns a 3D cube in position x y z of the given struct, with edge "Cubedimension" (defined above)
+;               and with and emitted light choosen randomly (see "emitted" parameters)
+(define (farecubi struct)
+  (combine
+   (with-emitted (emitted
+                  (random 1 10)
+                  (random 1 10)
+                  (random 1 10) 0.2)
+     (cube (pos (obs-x struct)
+                (obs-y struct)
+                (obs-z struct)
+                )
+           Cubedimension))))
+
+;list<struct>(obs) -> pict3d
+;Interpreation: taks a list<struct>(obs) as an input and returns a pict3d containing the 3D cube generated by each struct in the list
+;               when the recursion reaches the empty case it adds a sphere out if the field of view in the game
+(define (drawcubes obs-list)
+  (cond [(empty? obs-list)
+         (sphere (pos -100 -100 -100) 1/4)]
+        [(cons? obs-list)
+         (combine (farecubi (first obs-list))
+                  (drawcubes (rest obs-list)))]))
+
+
+; Define the list of struct(obs) for the current game.
+; Interpreation: This is so that the obstacles can be random generated each time but kept turing one single play
+(define all-obs-list (crea-lista-di-ostacoli OSTNUM))
+
+;define the pict3d containing all the cubes of "all-obs-list"
+(define MONDO (drawcubes all-obs-list))
+
+;____________________________________________________________________________________________________________________________________________
+
+;s n t are the parameters of big-bang3d and represent respectively the State (a pos), Frame number and Time (in milliseconds)
+
+;s t -> pos
+;Interpreation: Takes as input s and t and returns the position of the sphere moved up [with the z incresed]
+(define (move-up s t)
+  (pos (pos-x s)
+       (+ 0 (pos-y s))
+       (+ (pos-z s) 0.5)))
+
+;s t -> pos
+;Interpreation: Takes as input s and t and returns the position of the sphere moved down [with the z decreased]
+(define (move-down s t)
+  (pos (pos-x s)
+       (+ 0 (pos-y s))
+       (- (pos-z s) 0.5)))
+
+;s t -> pos
+;Interpreation: Takes as input s and t and returns the position of the sphere moved left [with the x decreased]
+(define (move-left s t)
+  (pos (- (pos-x s) 0.5)
+       (+ 0 (pos-y s))
+       (pos-z s)))
+
+;s t -> pos
+;Interpreation: Takes as input s and t and returns the position of the sphere moved right [with the x incresed]
+(define (move-right s t)
+  (pos (+ (pos-x s) 0.5)
+       (+ 0 (pos-y s))
+       (pos-z s)))
+
+;k is the parameter of big-bang3d that represent the key input
+
+;s n t k -> pos
+;Interpreation: takes as an input s n t k and operates one of the 4 functions defined above ("move-up" "move-left" "move-right" "move-down")
+(define (keyhandler s n t k)
+  (cond [(string=? k "up")
+         (move-up s t)]
+        [(string=? k "down")
+         (move-down s t)]
+        [(string=? k "left")
+         (move-left s t)]
+        [(string=? k "right")
+         (move-right s t)]
+                [else s]))
+
+;s n t -> pict3d
+;Interpreation: takes as inputs s n t and retuns a pct3d with a sphere whith a color (rbg 0.1 0.1 0.1) and a transparency "sphere-transparency" defined above
+(define (draw-ship s n t)
+  (combine
+   (with-color (rgba 0.1 0.1 0.1 sphere-transparency)
+     (sphere
+      (pos (pos-x s)
+           (+ (VEL t) (pos-y s))
+           (pos-z s)) 1))))
+
+;s n t -> pict3d (with non-default camera)
+;Interpreation: - takes as inputs s n t and returns a 3D scene where the position of the camera and the position of the camera looks at are not the default positions
+;               - this function allaws the camera to point at the sphere from a back/top view
+(define (place-camera s n t)
+  (basis 'camera (point-at
+                  (pos
+                   (pos-x s)
+                   (- (+ (VEL t) (pos-y s)) 3.5)
+                   (+ (pos-z s) 1.5))
+                  (pos (pos-x s)
+                       (+ (VEL t) (pos-y s))
+                       (pos-z s)))))
+
+;__________________________________________________________________________________________________________________________________________________
+
+;s n t -> pict3d
+;Interpreation: - given s n t returns the combination of the sphere, the camera, all the obstacle cube,
+;               - 4 bounding solids that define the top, left, bottom and right end of the playground
+;               - and one solid (with an on-frame changing color) that defines the end of the playground on the y axes.
+;               - if this last solid is reached by the sphere the game is won.
+
+(define (draw-all s n t)
+  (combine
+   (place-camera s n t)
+   (draw-ship s n t)
+   (combine
+    MONDO
+    ;end limit (y axes)
+    (with-emitted (emitted
+                   (random 1 10)(random 1 10)(random 1 10) 1)
+      (rectangle (pos (* 2 DimxOBS) (* 2 DimyOBS) (* 2 DimzOBS))
+                 (pos 0 (+ 1 (* 2 DimyOBS)) 0)))
+    ;bottom limit
+    (with-emitted (emitted
+                   "black" 1)
+      (rectangle (pos 0 -100 0)
+                 (pos (* 2 DimxOBS) (* 2 DimyOBS) -1)))
+    ;left limit
+    (with-emitted (emitted
+                   "white" 0.3)
+      (rectangle (pos 0 -100 0)
+                 (pos -1 (* 2 DimyOBS) (* 2 DimzOBS))))
+    ;top limit
+    (with-emitted (emitted
+                   "black" 1)
+      (rectangle (pos 0 -100 (* 2 DimzOBS))
+                 (pos (* 2 DimxOBS) (* 2 DimyOBS) (+ 1 (* 2 DimzOBS)))))
+    ;right limit
+    (with-emitted (emitted
+                   "white" 0.3)
+      (rectangle (pos (* 2 DimxOBS) -100 0)
+                 (pos (+ 1 (* 2 DimxOBS)) (* 2 DimyOBS) (* 2 DimzOBS)))))))  ; obstacles color
+;__________________________________________________________________________________________________________________________________________________
+
+;pos pos -> number
+;Interpreation: retunrs the distance of 2 pos [x y z]
+(define (3ddistance POS1  POS2)
+  (sqrt
+   (+ (sqr (- (pos-x POS2) (pos-x POS1)))
+      (sqr (- (pos-y POS2) (pos-y POS1)))
+      (sqr (- (pos-z POS2) (pos-z POS1))))))
+
+;s n t struct<obs> -> boolean
+;Interpreation: given s (position of the sphere) and a struct (an obstacle) returns #t when
+;               the dsitance form s (centre of the sphere) and the closest point (closest to s) on the surface of the cube defined by the struct is less or equal to 1 (radius of the sphere)
+;               which means that  the sphere and the cube are colliding
+;               else returns #f
+(define (1hai_perso s n t struct)
+  (cond
+    [(<= (3ddistance
+          (pos (pos-x s)
+               (+ (VEL t) (pos-y s))
+               (pos-z s))
+          (surface-data-pos
+           (cond (surface-data?
+                  (trace/data (cube
+                               (pos
+                                (obs-x struct)
+                                (obs-y struct)
+                                (obs-z struct)
+                                ) 1)
+                              (pos (pos-x s)
+                                   (+ (VEL t) (pos-y s))
+                                   (pos-z s))
+                              (pos
+                               (obs-x struct)
+                               (obs-y struct)
+                               (obs-z struct)
+                               )))
+                 (trace/data (cube
+                              (pos
+                               (obs-x struct)
+                               (obs-y struct)
+                               (obs-z struct)
+                               ) 1)
+                             (pos (pos-x s)
+                                  (+ (VEL t) (pos-y s))
+                                  (pos-z s))
+                             (pos
+                              (obs-x struct)
+                              (obs-y struct)
+                              (obs-z struct)
+                              ))
+                 [else (surface-data 2 (pos 1 1 1) #:normal -z)])))
+         1) #t] ;stop
+    [else #f] ));go
+
+;__________________________________________________________________________________________________________________________________________________
+
+;s n t list<struct>(obs) -> Boolena
+;Interpreation: given s n t and a list of structs returns #f if the given list is empty
+;               and #t if the result of "1hai_perso" of the first struct of the list returns #t
+;                else recur on the rest of the list
+(define (2list-of-bool s n t list)
+  (cond [(empty? list) #f]
+        [(1hai_perso s n t (first list)) #t]
+        [else (2list-of-bool s n t (rest list))]))
+
+;s n t -> Boolean
+;Interpreation: given s n t returns #f when the result of "2list-of-bool" on "all-obs-list" is #t
+;               else returns #f
+
+(define (3totcheck s n t)
+  (cond [(2list-of-bool s n t all-obs-list) #f]
+        [else #t]))
+
+;__________________________________________________________________________________________________________________________________________________
+;s n t -> window or boolean
+; Interprettion:
+;                -first condition cheks if the sphere hits one of the limits (top, bottom, left, thight) or one of the obstacles
+;                  if this conditions returns #t
+;                  returns a "Final-Menu" where you can close the "Final-Menu" window, stops the music and stop the loop of the big-bang3d
+
+;               NOTE: we were not able to set a way to also close the big-bang3d window (because this function is not inplemented in pict3d library)
+
+;                -second condition checks if the sphere hits the end of the tunnel
+;                  if this condition returns #t
+;                  returns a "Winner-Menu" window where you can close the "Winner-Menu" window, stops the music and stop the loop of the big-bang3d
+
+;                -else retunrs #f and the game goes on
+
+
+(define (closing-window s n t)
+  (cond
+    [(or
+      (boolean=? (3totcheck s n t) #f)
+      (> (+ (pos-x s) 1) (* 2 DimxOBS))
+      (< (- (pos-x s) 1) 1)
+      (> (+ (pos-z s) 1) (* 2 DimzOBS))
+      (< (- (pos-z s) 1) 1))
+     (begin
+       (stop)
+       (play SoundtrackMenu1))
+     (define Final-Menu (open-viewport "CubEscape"  600 400))
+     (((draw-pixmap-posn "gameover.jpg" 'unknown/mask)  Final-Menu)(make-posn 0 0))
+     
+     ((draw-solid-rectangle Final-Menu) (make-posn 200 300) 200 50 "white")
+     ((draw-rectangle Final-Menu) (make-posn 200 300) 200 50 "white")
+     
+     ((draw-string Final-Menu)(make-posn 270 330) "Close Game" "black")
+     
+     (define (Control-Final-Menu click)
+       (cond
+         ((and (>= (posn-x (mouse-click-posn click)) 200)
+               (<= (posn-x (mouse-click-posn click))400)
+               (>= (posn-y (mouse-click-posn click))300)
+               (<= (posn-y (mouse-click-posn click))350))
+          (begin
+            (stop)
+            (close-viewport Final-Menu)
+            ) #t)
+         (else (Control-Final-Menu (get-mouse-click Final-Menu)))
+         )
+       )
+     (Control-Final-Menu (get-mouse-click Final-Menu))]
+    
+    [(> (+ 1 (VEL t) (pos-y s)) (* 2 DimyOBS))
+     
+     (begin
+       (stop)
+       (play SoundtrackEnd))
+     (define Winner-Menu (open-viewport "CubEscape"  600 400))
+     (((draw-pixmap-posn "gamewon.jpg" 'unknown/mask)  Winner-Menu)(make-posn 0 0))
+     ((draw-solid-rectangle Winner-Menu) (make-posn 200 300) 200 50 "white")
+     ((draw-rectangle Winner-Menu) (make-posn 200 300) 200 50 "white")
+     ((draw-string Winner-Menu)(make-posn 270 330) "Close Game" "black")
+     
+     (define (Control-Winner-Menu click)
+       (cond
+         ((and (>= (posn-x (mouse-click-posn click)) 200)
+               (<= (posn-x (mouse-click-posn click))400)
+               (>= (posn-y (mouse-click-posn click))300)
+               (<= (posn-y (mouse-click-posn click))350))
+          (begin
+            (stop)
+            (close-viewport Winner-Menu)
+            ) #t)
+         (else (Control-Winner-Menu (get-mouse-click Winner-Menu)))
+         )
+       )
+     (Control-Winner-Menu (get-mouse-click Winner-Menu))]
+    [else #f]))
+;__________________________________________________________________________________________________________________________________________________
+;pos -> big-bang3d
+;Interpreation: given an Init-Stat starts the big-bang3d loop
+(define (Start-Game init-stat)
+  (cond
+    [(pos? init-stat)
+     (big-bang3d init-stat
+                 #:stop-state? closing-window          
+                 #:name "CubEscape"
+                 #:width 1000	 	 	 	 
+                 #:height 650
+                 #:on-key keyhandler
+                 #:on-draw draw-all)]
+    [else #t]))
+
+;__________________________________________________________________________________________________________________________________________________
+
+;display a window "Initial-Menu" with 2 buttons
+;"PlayGame" that closes the "Initial-Menu" and starts the big-bang3d
+;"Close" that closes the "Initial-Menu" and stops the music
+; Interpreation: A star game window
+
+(play SoundtrackMenu1)
+
+(define Initial-Menu (open-viewport "CubEscape"  600 400))
+(((draw-pixmap-posn "gamestart.jpg" 'unknown/mask)  Initial-Menu)(make-posn 0 0))
+((draw-solid-rectangle Initial-Menu) (make-posn 90 300) 200 50 "white")
+((draw-rectangle Initial-Menu) (make-posn 90 300) 200 50 "black")
+((draw-solid-rectangle Initial-Menu) (make-posn 310 300) 200 50 "white")
+((draw-rectangle Initial-Menu) (make-posn 310 300) 200 50 "black")
+((draw-string Initial-Menu)(make-posn 160 330) "Play  Game" "black")
+((draw-string Initial-Menu)(make-posn 395 330) "Close" "black")
+(define (Control-Main-Menu click)
+  (cond
+    ((and (>= (posn-x (mouse-click-posn click)) 90)
+          (<= (posn-x (mouse-click-posn click))290)
+          (>= (posn-y (mouse-click-posn click))300)
+          (<= (posn-y (mouse-click-posn click))350))
+     (close-viewport Initial-Menu)
+     (stop)
+     (begin (play SoundtrackMain)
+            (Start-Game init-stat)))    
+    ((and (>= (posn-x (mouse-click-posn click)) 310)
+          (<= (posn-x (mouse-click-posn click))510)
+          (>= (posn-y (mouse-click-posn click))300)
+          (<= (posn-y (mouse-click-posn click))350))
+     (begin
+       (stop)
+       (close-viewport Initial-Menu)))
+    (else (Control-Main-Menu (get-mouse-click Initial-Menu)))))
+(Control-Main-Menu (get-mouse-click Initial-Menu))
+;__________________________________________________________________________________________________________________________________________________
+
+;BUG REPORT
+;1 Sometimes the collision detection function returns an error
+;  - We think that's because the game stops before the function in executed in the current loop
+;  - due to this the function gets a Bool as input instead of a Pos.
+
+;2 Sometimes when pressing the "Close Game" button in the "Final-Menu" menu the window will close and reopen
+;  - Unknown couse.
+
+
+
+
+
